@@ -7,7 +7,8 @@ function App() {
     useEffect(() => {
         fetch('/api/notes')
             .then(res => res.json())
-            .then(data => setNotes(data));
+            .then(data => setNotes(data))
+            .catch(err => console.error('Failed to fetch notes:', err));
     }, []);
 
     const addNote = () => {
@@ -20,7 +21,8 @@ function App() {
         .then(newNote => {
             setNotes([...notes, newNote]);
             setText("");
-        });
+        })
+        .catch(err => console.error('Failed to add note:', err));
     };
 
     return (
