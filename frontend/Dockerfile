@@ -1,5 +1,5 @@
 # Build stage - Dependencies
-FROM node:18-alpine as dependencies
+FROM node:18-alpine AS dependencies
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ RUN npm ci --only=production && \
     npm cache clean --force
 
 # Build stage - Application build
-FROM node:18-alpine as build
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ RUN npm run build && \
     npm ci --only=production --silent
 
 # Production stage - Nginx serving
-FROM nginx:alpine as production
+FROM nginx:alpine AS production
 
 # Install curl for health checks
 RUN apk add --no-cache curl
@@ -41,10 +41,8 @@ COPY --from=build /app/build /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Create nginx user and set permissions
-RUN addgroup -g 1001 -S nginx && \
-    adduser -S nginx -u 1001 && \
-    chown -R nginx:nginx /usr/share/nginx/html && \
+# Set permissions for nginx user (nginx user already exists in nginx:alpine)
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
     chown -R nginx:nginx /var/cache/nginx && \
     chown -R nginx:nginx /var/log/nginx && \
     chown -R nginx:nginx /etc/nginx/conf.d && \

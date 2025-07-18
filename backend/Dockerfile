@@ -1,5 +1,5 @@
 # Build stage - Dependencies
-FROM node:18-alpine as dependencies
+FROM node:18-alpine AS dependencies
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN npm ci --include=dev && \
     npm cache clean --force
 
 # Build stage - Application preparation
-FROM node:18-alpine as build
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ RUN npm run lint --if-present || echo "No lint script found" && \
     npm run build --if-present || echo "No build script found"
 
 # Production stage - Runtime
-FROM node:18-alpine as production
+FROM node:18-alpine AS production
 
 # Install curl for health checks and dumb-init for proper signal handling
 RUN apk add --no-cache curl dumb-init

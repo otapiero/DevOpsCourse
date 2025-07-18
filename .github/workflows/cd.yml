@@ -57,8 +57,8 @@ jobs:
       - name: Setup image names
         id: setup-images
         run: |
-          echo "frontend-image=${{ secrets.DOCKER_HUB_USERNAME }}/notes-frontend" >> $GITHUB_OUTPUT
-          echo "backend-image=${{ secrets.DOCKER_HUB_USERNAME }}/notes-backend" >> $GITHUB_OUTPUT
+          echo "frontend-image=otapiero/notes-frontend" >> $GITHUB_OUTPUT
+          echo "backend-image=otapiero/notes-backend" >> $GITHUB_OUTPUT
       - name: Check if deployment should proceed
         id: check
         run: |
