@@ -120,15 +120,6 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Set image name for caching
-        id: set-image
-        run: |
-          if [ "${{ matrix.app }}" == "frontend" ]; then
-            echo "image_name=${{ inputs.frontend_image }}" >> $GITHUB_OUTPUT
-          else
-            echo "image_name=${{ inputs.backend_image }}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -138,12 +129,8 @@ jobs:
           push: true
           tags: ${{ matrix.app == 'frontend' && steps.frontend-meta.outputs.tags || steps.backend-meta.outputs.tags }}
           labels: ${{ matrix.app == 'frontend' && steps.frontend-meta.outputs.labels || steps.backend-meta.outputs.labels }}
-          cache-from: |
-            type=gha,scope=${{ matrix.app }}
-            type=registry,ref=${{ steps.set-image.outputs.image_name }}:cache
-          cache-to: |
-            type=gha,mode=max,scope=${{ matrix.app }}
-            type=registry,ref=${{ steps.set-image.outputs.image_name }}:cache,mode=max
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
