@@ -35,10 +35,6 @@ env:
   BUILDKIT_PROGRESS: plain
   BUILDX_NO_DEFAULT_ATTESTATIONS: '1'
   
-  # Image names (constructed from Docker Hub username)
-  FRONTEND_IMAGE: ${{ secrets.DOCKER_HUB_USERNAME }}/notes-frontend
-  BACKEND_IMAGE: ${{ secrets.DOCKER_HUB_USERNAME }}/notes-backend
-  
   # Deployment configuration
   DEPLOYMENT_TIMEOUT: '300'  # 5 minutes timeout for deployment operations
   HEALTH_CHECK_RETRIES: '5'  # Number of health check attempts
@@ -55,7 +51,14 @@ jobs:
       should-deploy: ${{ steps.check.outputs.should-deploy }}
       deployment-type: ${{ steps.check.outputs.deployment-type }}
       skip-health-checks: ${{ steps.check.outputs.skip-health-checks }}
+      frontend-image: ${{ steps.setup-images.outputs.frontend-image }}
+      backend-image: ${{ steps.setup-images.outputs.backend-image }}
     steps:
+      - name: Setup image names
+        id: setup-images
+        run: |
+          echo "frontend-image=${{ secrets.DOCKER_HUB_USERNAME }}/notes-frontend" >> $GITHUB_OUTPUT
+          echo "backend-image=${{ secrets.DOCKER_HUB_USERNAME }}/notes-backend" >> $GITHUB_OUTPUT
       - name: Check if deployment should proceed
         id: check
         run: |
@@ -101,8 +104,8 @@ jobs:
     if: needs.check-ci-success.outputs.should-deploy == 'true'
     uses: ./.github/workflows/build-push.yml
     with:
-      frontend_image: ${{ secrets.DOCKER_HUB_USERNAME }}/notes-frontend
-      backend_image: ${{ secrets.DOCKER_HUB_USERNAME }}/notes-backend
+      frontend_image: ${{ needs.check-ci-success.outputs.frontend-image }}
+      backend_image: ${{ needs.check-ci-success.outputs.backend-image }}
       registry: docker.io
       platforms: linux/amd64,linux/arm64
       download_artifacts: true
@@ -116,8 +119,8 @@ jobs:
     if: needs.check-ci-success.outputs.should-deploy == 'true'
     uses: ./.github/workflows/deploy.yml
     with:
-      frontend_image: ${{ secrets.DOCKER_HUB_USERNAME }}/notes-frontend
-      backend_image: ${{ secrets.DOCKER_HUB_USERNAME }}/notes-backend
+      frontend_image: ${{ needs.check-ci-success.outputs.frontend-image }}
+      backend_image: ${{ needs.check-ci-success.outputs.backend-image }}
       environment: ${{ github.event.inputs.environment || 'production' }}
       skip_health_checks: ${{ needs.check-ci-success.outputs.skip-health-checks == 'true' }}
       deployment_timeout: '300'
