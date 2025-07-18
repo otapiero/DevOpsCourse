@@ -81,6 +81,16 @@ jobs:
           name: ${{ inputs.artifact_name }}
           path: frontend/build/
         continue-on-error: true
+        
+      - name: Check if build artifacts exist (frontend only)
+        if: matrix.app == 'frontend'
+        run: |
+          if [ -d "frontend/build" ] && [ "$(ls -A frontend/build)" ]; then
+            echo "✅ Frontend build artifacts found"
+            ls -la frontend/build/
+          else
+            echo "⚠️ No frontend build artifacts found, will build from source"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -95,6 +105,18 @@ jobs:
           registry: ${{ inputs.registry }}
           username: ${{ secrets.docker_username }}
           password: ${{ secrets.docker_token }}
+      
+      - name: Create Docker Hub repository if it doesn't exist
+        run: |
+          IMAGE_NAME="${{ matrix.app == 'frontend' && inputs.frontend_image || inputs.backend_image }}"
+          echo "Checking if repository exists: $IMAGE_NAME"
+          
+          # Try to pull the image to check if repository exists
+          if ! docker pull $IMAGE_NAME:latest 2>/dev/null; then
+            echo "Repository $IMAGE_NAME doesn't exist or is empty - will be created on first push"
+          else
+            echo "Repository $IMAGE_NAME already exists"
+          fi
 
       - name: Extract metadata for frontend
         if: matrix.app == 'frontend'

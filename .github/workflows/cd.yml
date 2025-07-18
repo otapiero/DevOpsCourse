@@ -108,7 +108,7 @@ jobs:
       backend_image: ${{ needs.check-ci-success.outputs.backend-image }}
       registry: docker.io
       platforms: linux/amd64,linux/arm64
-      download_artifacts: true
+      download_artifacts: false
       artifact_name: frontend-build-18
     secrets:
       docker_username: ${{ secrets.DOCKER_HUB_USERNAME }}
