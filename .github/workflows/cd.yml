@@ -101,8 +101,8 @@ jobs:
     if: needs.check-ci-success.outputs.should-deploy == 'true'
     uses: ./.github/workflows/build-push.yml
     with:
-      frontend_image: ${{ vars.FRONTEND_IMAGE || format('{0}/notes-frontend', secrets.DOCKER_HUB_USERNAME) }}
-      backend_image: ${{ vars.BACKEND_IMAGE || format('{0}/notes-backend', secrets.DOCKER_HUB_USERNAME) }}
+      frontend_image: ${{ env.FRONTEND_IMAGE }}
+      backend_image: ${{ env.BACKEND_IMAGE }}
       registry: docker.io
       platforms: linux/amd64,linux/arm64
       download_artifacts: true
@@ -116,8 +116,8 @@ jobs:
     if: needs.check-ci-success.outputs.should-deploy == 'true'
     uses: ./.github/workflows/deploy.yml
     with:
-      frontend_image: ${{ vars.FRONTEND_IMAGE || format('{0}/notes-frontend', secrets.DOCKER_HUB_USERNAME) }}
-      backend_image: ${{ vars.BACKEND_IMAGE || format('{0}/notes-backend', secrets.DOCKER_HUB_USERNAME) }}
+      frontend_image: ${{ env.FRONTEND_IMAGE }}
+      backend_image: ${{ env.BACKEND_IMAGE }}
       environment: ${{ github.event.inputs.environment || 'production' }}
       skip_health_checks: ${{ needs.check-ci-success.outputs.skip-health-checks == 'true' }}
       deployment_timeout: '300'
