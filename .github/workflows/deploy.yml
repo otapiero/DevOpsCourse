@@ -1,0 +1,307 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      frontend_image:
+        description: 'Frontend Docker image name'
+        required: true
+        type: string
+      backend_image:
+        description: 'Backend Docker image name'
+        required: true
+        type: string
+      environment:
+        description: 'Deployment environment'
+        required: false
+        type: string
+        default: 'production'
+      skip_health_checks:
+        description: 'Skip health checks (emergency only)'
+        required: false
+        type: boolean
+        default: false
+      deployment_timeout:
+        description: 'Deployment timeout in seconds'
+        required: false
+        type: string
+        default: '300'
+      health_check_retries:
+        description: 'Number of health check attempts'
+        required: false
+        type: string
+        default: '5'
+      health_check_interval:
+        description: 'Seconds between health check attempts'
+        required: false
+        type: string
+        default: '10'
+    secrets:
+      vm_host:
+        description: 'Target VM IP address or hostname'
+        required: true
+      vm_username:
+        description: 'SSH username for VM access'
+        required: true
+      vm_ssh_key:
+        description: 'Private SSH key for VM authentication'
+        required: true
+    outputs:
+      deployment_status:
+        description: 'Deployment status (success/failure)'
+        value: ${{ jobs.deploy.outputs.deployment_status }}
+      frontend_url:
+        description: 'Frontend application URL'
+        value: ${{ jobs.deploy.outputs.frontend_url }}
+      backend_url:
+        description: 'Backend application URL'
+        value: ${{ jobs.deploy.outputs.backend_url }}
+
+env:
+  DEPLOYMENT_TIMEOUT: ${{ inputs.deployment_timeout }}
+  HEALTH_CHECK_RETRIES: ${{ inputs.health_check_retries }}
+  HEALTH_CHECK_INTERVAL: ${{ inputs.health_check_interval }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      deployment_status: ${{ steps.deployment-result.outputs.status }}
+      frontend_url: ${{ steps.deployment-result.outputs.frontend_url }}
+      backend_url: ${{ steps.deployment-result.outputs.backend_url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.vm_ssh_key }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.vm_host }} >> ~/.ssh/known_hosts
+
+      - name: Copy docker-compose file to VM
+        run: |
+          # Create a production docker-compose file that uses the built images
+          cat > docker-compose.prod.yml << EOF
+          version: '3.8'
+          
+          services:
+            backend:
+              image: ${{ inputs.backend_image }}:latest
+              container_name: notes-backend
+              ports:
+                - "5000:5000"
+              networks:
+                - app-network
+              restart: unless-stopped
+              environment:
+                - NODE_ENV=${{ inputs.environment }}
+          
+            frontend:
+              image: ${{ inputs.frontend_image }}:latest
+              container_name: notes-frontend
+              ports:
+                - "3000:3000"
+              depends_on:
+                - backend
+              networks:
+                - app-network
+              restart: unless-stopped
+              environment:
+                - NODE_ENV=${{ inputs.environment }}
+          
+          networks:
+            app-network:
+              driver: bridge
+          EOF
+          
+          # Copy the production compose file to VM
+          scp -i ~/.ssh/id_rsa docker-compose.prod.yml ${{ secrets.vm_username }}@${{ secrets.vm_host }}:~/docker-compose.yml
+
+      - name: Deploy to VM
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.vm_username }}@${{ secrets.vm_host }} << 'EOF'
+            set -e
+            
+            echo "🚀 Starting deployment to ${{ inputs.environment }} environment..."
+            
+            # Stop and remove existing containers
+            echo "Stopping existing containers..."
+            docker-compose down --remove-orphans || true
+            
+            # Pull latest images
+            echo "Pulling latest Docker images..."
+            docker pull ${{ inputs.backend_image }}:latest
+            docker pull ${{ inputs.frontend_image }}:latest
+            
+            # Start new containers
+            echo "Starting new containers..."
+            docker-compose up -d
+            
+            # Wait for containers to be ready
+            echo "Waiting for containers to start..."
+            sleep 10
+            
+            echo "✅ Deployment completed successfully"
+          EOF
+
+      - name: Verify deployment
+        id: verify-deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Skip health checks: ${{ inputs.skip_health_checks }}"
+          
+          # Wait a bit more for services to fully start
+          sleep 15
+          
+          # Check if containers are running
+          ssh -i ~/.ssh/id_rsa ${{ secrets.vm_username }}@${{ secrets.vm_host }} << 'EOF'
+            echo "Checking container status..."
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            # Check if containers are healthy
+            if ! docker ps | grep -q "notes-backend.*Up"; then
+              echo "❌ Backend container is not running"
+              exit 1
+            fi
+            
+            if ! docker ps | grep -q "notes-frontend.*Up"; then
+              echo "❌ Frontend container is not running"
+              exit 1
+            fi
+            
+            echo "✅ All containers are running successfully"
+          EOF
+          
+          # Perform health checks unless skipped
+          if [[ "${{ inputs.skip_health_checks }}" == "true" ]]; then
+            echo "⚠️  Health checks skipped as requested (emergency deployment)"
+            echo "::warning title=Health Checks Skipped::Health checks were skipped for this emergency deployment"
+            echo "health_checks_passed=skipped" >> $GITHUB_OUTPUT
+          else
+            echo "Performing health checks..."
+            
+            # Check backend health (with retry)
+            BACKEND_HEALTHY=false
+            for i in $(seq 1 ${{ env.HEALTH_CHECK_RETRIES }}); do
+              if curl -f -s http://${{ secrets.vm_host }}:5000/health > /dev/null 2>&1 || curl -f -s http://${{ secrets.vm_host }}:5000/ > /dev/null 2>&1; then
+                echo "✅ Backend is responding"
+                BACKEND_HEALTHY=true
+                break
+              elif [ $i -eq ${{ env.HEALTH_CHECK_RETRIES }} ]; then
+                echo "❌ Backend health check failed after ${{ env.HEALTH_CHECK_RETRIES }} attempts"
+              else
+                echo "Backend not ready, retrying in ${{ env.HEALTH_CHECK_INTERVAL }} seconds... (attempt $i/${{ env.HEALTH_CHECK_RETRIES }})"
+                sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+              fi
+            done
+            
+            # Check frontend health (with retry)
+            FRONTEND_HEALTHY=false
+            for i in $(seq 1 ${{ env.HEALTH_CHECK_RETRIES }}); do
+              if curl -f -s http://${{ secrets.vm_host }}:3000/ > /dev/null 2>&1; then
+                echo "✅ Frontend is responding"
+                FRONTEND_HEALTHY=true
+                break
+              elif [ $i -eq ${{ env.HEALTH_CHECK_RETRIES }} ]; then
+                echo "❌ Frontend health check failed after ${{ env.HEALTH_CHECK_RETRIES }} attempts"
+              else
+                echo "Frontend not ready, retrying in ${{ env.HEALTH_CHECK_INTERVAL }} seconds... (attempt $i/${{ env.HEALTH_CHECK_RETRIES }})"
+                sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+              fi
+            done
+            
+            # Report health check results
+            if [[ "$BACKEND_HEALTHY" == "false" ]] || [[ "$FRONTEND_HEALTHY" == "false" ]]; then
+              echo "::error title=Health Check Failed::One or more services failed health checks"
+              echo "health_checks_passed=false" >> $GITHUB_OUTPUT
+              exit 1
+            else
+              echo "health_checks_passed=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "🔄 Deployment failed, attempting rollback..."
+          
+          ssh -i ~/.ssh/id_rsa ${{ secrets.vm_username }}@${{ secrets.vm_host }} << 'EOF'
+            set -e
+            
+            echo "Stopping failed containers..."
+            docker-compose down --remove-orphans || true
+            
+            # Try to start with previous images (if they exist)
+            echo "Attempting to rollback to previous version..."
+            
+            # Check if we have previous images tagged as 'previous'
+            if docker images | grep -q "${{ inputs.backend_image }}.*previous" && docker images | grep -q "${{ inputs.frontend_image }}.*previous"; then
+              echo "Found previous images, rolling back..."
+              
+              # Create rollback compose file
+              cat > docker-compose.rollback.yml << 'ROLLBACK_EOF'
+          version: '3.8'
+          
+          services:
+            backend:
+              image: ${{ inputs.backend_image }}:previous
+              container_name: notes-backend
+              ports:
+                - "5000:5000"
+              networks:
+                - app-network
+              restart: unless-stopped
+              environment:
+                - NODE_ENV=${{ inputs.environment }}
+          
+            frontend:
+              image: ${{ inputs.frontend_image }}:previous
+              container_name: notes-frontend
+              ports:
+                - "3000:3000"
+              depends_on:
+                - backend
+              networks:
+                - app-network
+              restart: unless-stopped
+              environment:
+                - NODE_ENV=${{ inputs.environment }}
+          
+          networks:
+            app-network:
+              driver: bridge
+          ROLLBACK_EOF
+              
+              docker-compose -f docker-compose.rollback.yml up -d
+              echo "✅ Rollback completed"
+            else
+              echo "⚠️  No previous images found for rollback"
+            fi
+          EOF
+
+      - name: Set deployment result
+        id: deployment-result
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "frontend_url=http://${{ secrets.vm_host }}:3000" >> $GITHUB_OUTPUT
+            echo "backend_url=http://${{ secrets.vm_host }}:5000" >> $GITHUB_OUTPUT
+            echo "🎉 Deployment completed successfully!"
+            echo "Frontend: http://${{ secrets.vm_host }}:3000"
+            echo "Backend: http://${{ secrets.vm_host }}:5000"
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "frontend_url=" >> $GITHUB_OUTPUT
+            echo "backend_url=" >> $GITHUB_OUTPUT
+            echo "❌ Deployment failed. Check logs for details."
+          fi
+
+      - name: Cleanup SSH
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa

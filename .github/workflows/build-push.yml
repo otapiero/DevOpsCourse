@@ -1,0 +1,162 @@
+name: Reusable Build and Push
+
+on:
+  workflow_call:
+    inputs:
+      frontend_image:
+        description: 'Frontend Docker image name'
+        required: true
+        type: string
+      backend_image:
+        description: 'Backend Docker image name'
+        required: true
+        type: string
+      registry:
+        description: 'Docker registry URL'
+        required: false
+        type: string
+        default: 'docker.io'
+      platforms:
+        description: 'Target platforms for multi-arch builds'
+        required: false
+        type: string
+        default: 'linux/amd64,linux/arm64'
+      download_artifacts:
+        description: 'Whether to download build artifacts from CI'
+        required: false
+        type: boolean
+        default: true
+      artifact_name:
+        description: 'Name of the build artifact to download'
+        required: false
+        type: string
+        default: 'frontend-build-18'
+    secrets:
+      docker_username:
+        description: 'Docker registry username'
+        required: true
+      docker_token:
+        description: 'Docker registry access token'
+        required: true
+    outputs:
+      frontend_digest:
+        description: 'Frontend image digest'
+        value: ${{ jobs.build-and-push.outputs.frontend_digest }}
+      backend_digest:
+        description: 'Backend image digest'
+        value: ${{ jobs.build-and-push.outputs.backend_digest }}
+      frontend_tags:
+        description: 'Frontend image tags'
+        value: ${{ jobs.build-and-push.outputs.frontend_tags }}
+      backend_tags:
+        description: 'Backend image tags'
+        value: ${{ jobs.build-and-push.outputs.backend_tags }}
+
+env:
+  DOCKER_BUILDKIT: '1'
+  COMPOSE_DOCKER_CLI_BUILD: '1'
+  BUILDKIT_PROGRESS: plain
+  BUILDX_NO_DEFAULT_ATTESTATIONS: '1'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [frontend, backend]
+    outputs:
+      frontend_digest: ${{ steps.frontend-meta.outputs.digest }}
+      backend_digest: ${{ steps.backend-meta.outputs.digest }}
+      frontend_tags: ${{ steps.frontend-meta.outputs.tags }}
+      backend_tags: ${{ steps.backend-meta.outputs.tags }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts from CI (if enabled and frontend)
+        if: inputs.download_artifacts && matrix.app == 'frontend'
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: frontend/build/
+        continue-on-error: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ inputs.platforms }}
+          driver-opts: |
+            network=host
+
+      - name: Log in to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.docker_username }}
+          password: ${{ secrets.docker_token }}
+
+      - name: Extract metadata for frontend
+        if: matrix.app == 'frontend'
+        id: frontend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.frontend_image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Extract metadata for backend
+        if: matrix.app == 'backend'
+        id: backend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.backend_image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.app }}
+          file: ./${{ matrix.app }}/Dockerfile
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ matrix.app == 'frontend' && steps.frontend-meta.outputs.tags || steps.backend-meta.outputs.tags }}
+          labels: ${{ matrix.app == 'frontend' && steps.frontend-meta.outputs.labels || steps.backend-meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=${{ matrix.app }}
+            type=registry,ref=${{ matrix.app == 'frontend' && inputs.frontend_image || inputs.backend_image }}:cache
+          cache-to: |
+            type=gha,mode=max,scope=${{ matrix.app }}
+            type=registry,ref=${{ matrix.app == 'frontend' && inputs.frontend_image || inputs.backend_image }}:cache,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Verify image push
+        run: |
+          echo "Verifying image was pushed successfully..."
+          IMAGE_NAME="${{ matrix.app == 'frontend' && inputs.frontend_image || inputs.backend_image }}"
+          docker pull ${IMAGE_NAME}:latest
+          echo "✅ Image ${IMAGE_NAME}:latest verified successfully"
+
+      - name: Tag previous version for rollback
+        run: |
+          echo "Tagging current latest as previous for rollback capability..."
+          IMAGE_NAME="${{ matrix.app == 'frontend' && inputs.frontend_image || inputs.backend_image }}"
+          
+          # Pull the current latest image
+          if docker pull ${IMAGE_NAME}:latest 2>/dev/null; then
+            # Tag it as previous
+            docker tag ${IMAGE_NAME}:latest ${IMAGE_NAME}:previous
+            docker push ${IMAGE_NAME}:previous
+            echo "✅ Tagged ${IMAGE_NAME}:previous for rollback"
+          else
+            echo "ℹ️  No existing latest image found, skipping previous tag"
+          fi
+        continue-on-error: true
