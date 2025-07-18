@@ -125,10 +125,8 @@ jobs:
         with:
           images: ${{ inputs.frontend_image }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
+            type=raw,value=latest
             type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Extract metadata for backend
         if: matrix.app == 'backend'
@@ -137,10 +135,8 @@ jobs:
         with:
           images: ${{ inputs.backend_image }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
+            type=raw,value=latest
             type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
