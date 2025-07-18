@@ -129,7 +129,7 @@ jobs:
             
             # Stop and remove existing containers
             echo "Stopping existing containers..."
-            docker-compose down --remove-orphans || true
+            docker compose down --remove-orphans || true
             
             # Pull latest images
             echo "Pulling latest Docker images..."
@@ -138,7 +138,7 @@ jobs:
             
             # Start new containers
             echo "Starting new containers..."
-            docker-compose up -d
+            docker compose up -d
             
             # Wait for containers to be ready
             echo "Waiting for containers to start..."
@@ -187,7 +187,7 @@ jobs:
             # Check backend health (with retry)
             BACKEND_HEALTHY=false
             for i in $(seq 1 ${{ env.HEALTH_CHECK_RETRIES }}); do
-              if curl -f -s http://${{ secrets.vm_host }}:5000/health > /dev/null 2>&1 || curl -f -s http://${{ secrets.vm_host }}:5000/ > /dev/null 2>&1; then
+              if curl -f -s http://${{ secrets.vm_host }}:5000/api/notes > /dev/null 2>&1; then
                 echo "✅ Backend is responding"
                 BACKEND_HEALTHY=true
                 break
@@ -233,7 +233,7 @@ jobs:
             set -e
             
             echo "Stopping failed containers..."
-            docker-compose down --remove-orphans || true
+            docker compose down --remove-orphans || true
             
             # Try to start with previous images (if they exist)
             echo "Attempting to rollback to previous version..."
@@ -276,7 +276,7 @@ jobs:
               driver: bridge
           ROLLBACK_EOF
               
-              docker-compose -f docker-compose.rollback.yml up -d
+              docker compose -f docker-compose.rollback.yml up -d
               echo "✅ Rollback completed"
             else
               echo "⚠️  No previous images found for rollback"
