@@ -37,7 +37,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       
       - name: Cache frontend node_modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: frontend/node_modules
           key: frontend-deps-${{ runner.os }}-${{ matrix.node-version }}-${{ hashFiles('frontend/package-lock.json') }}
@@ -61,7 +61,7 @@ jobs:
       
       - name: Cache frontend build
         if: success()
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: frontend/build
           key: frontend-build-${{ runner.os }}-${{ matrix.node-version }}-${{ github.sha }}
@@ -70,7 +70,7 @@ jobs:
       
       - name: Upload frontend build artifacts
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-build-${{ matrix.node-version }}
           path: frontend/build/
@@ -78,7 +78,7 @@ jobs:
       
       - name: Upload frontend build logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-build-logs-${{ matrix.node-version }}
           path: frontend/build.log
@@ -115,7 +115,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       
       - name: Cache backend node_modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: backend/node_modules
           key: backend-deps-${{ runner.os }}-${{ matrix.node-version }}-${{ hashFiles('backend/package-lock.json') }}
@@ -153,7 +153,7 @@ jobs:
       
       - name: Upload backend verification logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: backend-verification-logs-${{ matrix.node-version }}
           path: backend/verify.log
@@ -190,7 +190,7 @@ jobs:
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
       
       - name: Cache component node_modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ matrix.component }}/node_modules
           key: ${{ matrix.component }}-deps-${{ runner.os }}-18-${{ hashFiles(format('{0}/package-lock.json', matrix.component)) }}
@@ -214,7 +214,7 @@ jobs:
       
       - name: Upload lint results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lint-results-${{ matrix.component }}
           path: ${{ matrix.component }}/lint-results.log
@@ -253,7 +253,7 @@ jobs:
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
       
       - name: Cache component node_modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ matrix.component }}/node_modules
           key: ${{ matrix.component }}-deps-${{ runner.os }}-${{ env.NODE_VERSION }}-${{ hashFiles(format('{0}/package-lock.json', matrix.component)) }}
@@ -279,7 +279,7 @@ jobs:
       
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.component }}
           path: |
@@ -365,7 +365,7 @@ jobs:
       
       - name: Upload CI summary report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ci-summary-report
           path: ci-summary.md
@@ -373,7 +373,7 @@ jobs:
       
       - name: Upload workflow failure logs
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ci-failure-logs-${{ github.run_id }}
           path: |
